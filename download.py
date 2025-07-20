@@ -1,11 +1,11 @@
 """
 download.py
-Pull 500 Fe-based materials from Materials Project and store them in materials.duckdb
+Pull 500 Fe-based materials from Materials Project and save them in materials.duckdb
 """
 from mp_api.client import MPRester
 import pandas as pd, duckdb
 
-API_KEY = "jowrtF1dAxnFGHZrc4sh1Mj1HmKQvCjD"   # ← your key
+API_KEY = "jowrtF1dAxnFGHZrc4sh1Mj1HmKQvCjD"      # ← your key
 
 FIELDS = [
     # identifiers
@@ -16,14 +16,13 @@ FIELDS = [
     "symmetry.space_group_symbol", "symmetry.crystal_system",
 
     # thermodynamics
-    "formation_energy_per_atom",
-    "energy_above_hull",
+    "formation_energy_per_atom", "energy_above_hull",
     "equilibrium_reaction_energy_per_atom",
 
     # electronic
     "band_gap",
 
-    # mechanical (elastic summary)
+    # mechanical
     "bulk_modulus", "shear_modulus", "universal_anisotropy",
 
     # magnetic
@@ -44,7 +43,9 @@ with MPRester(API_KEY) as mpr:
         if len(rows) >= MAX_ROWS:
             break
 
-df = pd.DataFrame(rows)[FIELDS]
+# -------- flatten nested JSON --------
+df = pd.json_normalize(rows)[FIELDS]      # now the two symmetry columns exist
+# -------------------------------------
 
 con = duckdb.connect("materials.duckdb")
 con.register("tmp", df)
