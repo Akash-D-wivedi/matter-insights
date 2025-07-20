@@ -1,0 +1,11 @@
+﻿# virtual environments
+.venv/
+env/
+
+# Python artefacts
+__pycache__/
+*.py[cod]
+
+# OS cruft
+.DS_Store
+Thumbs.db
