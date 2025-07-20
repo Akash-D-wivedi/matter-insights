@@ -3,21 +3,27 @@ import duckdb, streamlit as st, plotly.express as px
 con = duckdb.connect("materials.duckdb")
 df  = con.execute("SELECT * FROM materials").fetch_df()
 
-st.set_page_config(page_title="Matter Insights")
+# ── keep only the columns you exposed in download.py ─────────────────────────
+ALLOWED = set(df.columns)            # already limited above – defensive line
+numeric = [c for c in df.columns if df[c].dtype.kind in "if" and c in ALLOWED]
+
+# ── Streamlit UI ─────────────────────────────────────────────────────────────
+st.set_page_config(page_title="Matter Insights", layout="wide")
 st.title("Matter Insights – Material Explorer (alpha)")
 
 # --- sidebar search ---
-formula = st.sidebar.text_input("Search formula (e.g. Fe2O3)").strip()
+formula = st.sidebar.text_input("Search formula (e.g. Fe₂O₃)").strip()
 if formula:
     df = df[df.formula_pretty.str.contains(formula, case=False)]
 
 # --- scatter plot ---
-x = st.selectbox("X-axis", df.columns, index=df.columns.get_loc("density"))
-y = st.selectbox("Y-axis", df.columns, index=df.columns.get_loc("formation_energy_per_atom"))
-st.plotly_chart(px.scatter(df, x=x, y=y, hover_name="formula_pretty", height=600),
-                use_container_width=True)
+x = st.selectbox("X-axis", numeric, index=numeric.index("density"))
+y = st.selectbox("Y-axis", numeric, index=numeric.index("formation_energy_per_atom"))
+st.plotly_chart(
+    px.scatter(df, x=x, y=y, hover_name="formula_pretty", height=600),
+    use_container_width=True)
 
-# --- radar compare ---
+# --- radar / polar compare ---
 st.subheader("Compare materials")
 choices = st.multiselect("Pick 2 – 5 samples", df["formula_pretty"].unique())
 if 2 <= len(choices) <= 5:
