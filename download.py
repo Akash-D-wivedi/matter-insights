@@ -1,18 +1,20 @@
 """
 download.py
-Pull 500 Fe-based materials from Materials Project
-and store them in materials.duckdb
+Pull 500 Fe-based materials from Materials Project and
+store them in materials.duckdb
 """
 from mp_api.client import MPRester
 import pandas as pd, duckdb
 
+# ── only fields that the MP “summary” endpoint really offers ───────────────
 FIELDS = [
     # identifiers
     "material_id", "formula_pretty",
 
     # basic structure / composition
     "nsites", "volume", "density",
-    "spacegroup", "crystal_system",
+    "symmetry.crystal_system",          # <- valid nested paths
+    "symmetry.space_group_symbol",
 
     # thermodynamics
     "formation_energy_per_atom",
@@ -22,14 +24,11 @@ FIELDS = [
     # electronic
     "band_gap",
 
-    # mechanical
-    "elasticity.anisotropy",
-    "elasticity.G_Voigt",
-    "elasticity.K_Voigt",
+    # mechanical (elastic)
+    "bulk_modulus", "shear_modulus", "universal_anisotropy",
 
     # magnetic
-    "magnetism.total_magnetization",
-    "magnetism.ordering",
+    "total_magnetization", "ordering",
 
     # convenience
     "is_stable",
@@ -40,14 +39,15 @@ rows = []
 
 with MPRester() as mpr:
     for doc in mpr.materials.summary.search(
-            elements=["Fe"], fields=FIELDS, chunk_size=250):
+        elements=["Fe"], fields=FIELDS, chunk_size=250
+    ):
         rows.append(doc.dict())
         if len(rows) >= MAX_ROWS:
             break
 
-df = pd.DataFrame(rows)[FIELDS]      # keep ONLY the approved columns
+df = pd.DataFrame(rows)[FIELDS]        # keep only requested columns
 
-# save to DuckDB -------------------------------------------------------------
+# ── save to DuckDB ─────────────────────────────────────────────────────────
 con = duckdb.connect("materials.duckdb")
 con.register("tmp", df)
 con.execute("DROP TABLE IF EXISTS materials")

@@ -1,0 +1,9 @@
+# Every time you start work
+cd A:\matter_insights
+& "..\matter_env\Scripts\Activate.ps1"    # (matter_env) prompt appears
+git pull --rebase origin main             # get teammates’ changes
+
+# …edit files…
+git add <files>
+git commit -m "Message describing the change"
+git push origin main                      # deploys automatically
