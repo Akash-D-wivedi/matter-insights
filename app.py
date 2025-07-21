@@ -51,28 +51,47 @@ if 2 <= len(choices_radar) <= 5 and len(numeric_cols) >= 3:
         use_container_width=True,
     )
 
+# 〈START – REPLACE THE WHOLE PARALLEL-COORDINATES BLOCK〉
 # --- parallel coordinates plot ----------------------------------------------
 st.subheader("Compare materials – parallel coordinates")
+
 choices_pc = st.multiselect(
     "Pick 2 – 10 samples (numeric properties only)",
     df["formula_pretty"].unique(),
     key="pc",
 )
+
+# make sure we have enough samples and at least 2 numeric axes
 if 2 <= len(choices_pc) <= 10 and len(numeric_cols) >= 2:
-    norm = df.loc[df.formula_pretty.isin(choices_pc), ["formula_pretty", *numeric_cols]].copy()
+    # keep only the chosen rows + numeric columns
+    norm = df.loc[
+        df.formula_pretty.isin(choices_pc), ["formula_pretty", *numeric_cols]
+    ].copy()
 
-    # normalise numeric columns 0-1
+    # 1️ map every formula_pretty to a numeric ID for colouring
+    norm["sample_id"] = (
+        norm["formula_pretty"].astype("category").cat.codes + 1
+    )  # start at 1
+
+    # 2️ normalise numeric columns to 0‒1 so axes have the same scale
     for col in numeric_cols:
-        col_min, col_max = norm[col].min(), norm[col].max()
-        norm[col] = (norm[col] - col_min) / (col_max - col_min + 1e-9)
+        cmin, cmax = norm[col].min(), norm[col].max()
+        norm[col] = (norm[col] - cmin) / (cmax - cmin + 1e-9)
 
+    # 3️ build the figure – colour uses the numeric sample_id
     fig_pc = px.parallel_coordinates(
         norm,
-        color="formula_pretty",
         dimensions=numeric_cols,
+        color="sample_id",
+        color_continuous_scale="Turbo",
         labels={c: c.replace("_", " ") for c in numeric_cols},
     )
+
+    # hide colour bar (legend already comes from multiselect chips)
+    fig_pc.update_coloraxes(showscale=False)
+
     st.plotly_chart(fig_pc, use_container_width=True)
 
 elif len(numeric_cols) < 2:
     st.info("Not enough numeric columns to draw a parallel-coordinates plot.")
+# 〈END〉
