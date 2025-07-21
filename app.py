@@ -1,48 +1,68 @@
 import duckdb, streamlit as st, plotly.express as px
-
 con = duckdb.connect("materials.duckdb")
 df  = con.execute("SELECT * FROM materials").fetch_df()
-
 st.set_page_config(page_title="Matter Insights", layout="wide")
 st.title("Matter Insights – Material Explorer (alpha)")
-
 # ── sidebar search ─────────────────────────────────────────────────────────
 formula = st.sidebar.text_input("Search formula (e.g. Fe2O3)").strip()
 if formula:
     df = df[df.formula_pretty.str.contains(formula, case=False)]
-
 # --- scatter plot -----------------------------------------------------------
 x = st.selectbox("X-axis", df.columns, index=df.columns.get_loc("density"))
 y = st.selectbox("Y-axis", df.columns, index=df.columns.get_loc("formation_energy_per_atom"))
-
 st.plotly_chart(
     px.scatter(df, x=x, y=y, hover_name="formula_pretty", height=600),
     use_container_width=True,
 )
-
 # Decide which columns are numeric only --------------------------------------
 numeric_cols = df.select_dtypes("number").columns.tolist()
+# ──────────────────────────────────────────────────────────────────────────────
+#   MULTI-MATERIAL COMPARISON  (Radar · Parallel-coords · Heat-map)
+# ──────────────────────────────────────────────────────────────────────────────
+import plotly.graph_objects as go
+import plotly.express as px
 
-# --- radar plot -------------------------------------------------------------
-st.subheader("Compare materials – radar")
-choices_radar = st.multiselect("Pick 2 – 5 samples", df["formula_pretty"].unique())
-if 2 <= len(choices_radar) <= 5 and len(numeric_cols) >= 3:
-    melt = (
-        df.loc[df.formula_pretty.isin(choices_radar), ["formula_pretty", *numeric_cols]]
-          .melt(id_vars="formula_pretty", var_name="property", value_name="value")
-    )
+st.header("Compare materials")
 
-    # normalise 0-1 per property so shapes are comparable
-    melt["value_norm"] = (
-        melt.groupby("property")["value"].transform(
-            lambda s: (s - s.min()) / (s.max() - s.min() + 1e-9)
-        )
-    )
+###############################################################################
+# ❶ pick samples & axes
+###############################################################################
+all_numeric = df.select_dtypes("number").columns.tolist()
 
+samples = st.multiselect(
+    "Pick 2 – 10 materials",
+    df["formula_pretty"].unique(),
+    key="cmp-samples",
+)
+
+axes = st.multiselect(
+    "Pick 2 – 10 numeric properties",
+    all_numeric,
+    default=all_numeric[:6],
+    key="cmp-axes",
+)
+
+if not (2 <= len(samples) <= 10 and 2 <= len(axes) <= 10):
+    st.info("Select 2–10 materials **and** 2–10 numeric properties to compare.")
+    st.stop()
+
+# subset + drop rows with any NaN in the chosen axes
+sub = df.loc[df.formula_pretty.isin(samples), ["formula_pretty", *axes]].dropna()
+if sub.empty:
+    st.error("All chosen properties contain missing values for these samples.")
+    st.stop()
+
+###############################################################################
+# ❷ RADAR plot (keep for ≤ 6 materials & ≤ 6 axes)
+###############################################################################
+if len(samples) <= 6 and len(axes) <= 6:
+    radar_df = sub.melt(id_vars="formula_pretty",
+                        var_name="property", value_name="value")
+    st.subheader("📈 Radar chart")
     st.plotly_chart(
         px.line_polar(
-            melt,
-            r="value_norm",
+            radar_df,
+            r="value",
             theta="property",
             color="formula_pretty",
             line_close=True,
@@ -51,64 +71,54 @@ if 2 <= len(choices_radar) <= 5 and len(numeric_cols) >= 3:
         use_container_width=True,
     )
 
-# 〈START – REPLACE THE WHOLE PARALLEL-COORDINATES BLOCK〉
+###############################################################################
+# ❸ PARALLEL-COORDINATES  (robust → no NaN, no zero-range axes)
+###############################################################################
+st.subheader("🪢 Parallel coordinates")
 
-# --- PARALLEL-COORDINATES PLOT --------------------------------------------
-st.subheader("Compare materials – parallel coordinates")
+# give every sample a numeric colour (required by Plotly)
+sub = sub.copy()
+sub["sample_id"] = sub["formula_pretty"].astype("category").cat.codes + 1
 
-# ── pick samples ───────────────────────────────────────────────────────────
-samples = st.multiselect(
-    "Pick 2 – 10 materials (numeric properties only)",
-    df["formula_pretty"].unique(),
-    key="pc-samples",
-)
-
-# ── pick numeric axes ──────────────────────────────────────────────────────
-all_numeric = df.select_dtypes("number").columns.tolist()
-axes = st.multiselect(
-    "Choose 2 – 10 numeric properties to draw as axes",
-    all_numeric,
-    default=all_numeric[:6],          # first few as a sane default
-    key="pc-axes",
-)
-
-# ── build the plot ─────────────────────────────────────────────────────────
-if 2 <= len(samples) <= 10 and 2 <= len(axes) <= 10:
-    sub = df.loc[df.formula_pretty.isin(samples), ["formula_pretty", *axes]].copy()
-
-    # numeric line-colour (one integer per sample) → works for Parcoords
-    sub["sample_id"] = sub["formula_pretty"].astype("category").cat.codes + 1
-
-    import plotly.graph_objects as go
-
-    dimensions = []
-    for col in axes:
-        dimensions.append(
-            dict(
-                label   = col.replace("_", " "),
-                values  = sub[col],
-                range   = [sub[col].min(), sub[col].max()],  # keep real numbers
-                tickfont= dict(size=11),
-            )
-        )
-
-    fig_pc = go.Figure(
-        data=go.Parcoords(
-            line=dict(
-                color=sub["sample_id"],
-                colorscale="Turbo",
-                showscale=False,
-            ),
-            dimensions=dimensions,
-        )
+dimensions = []
+for col in axes:
+    vals = sub[col].astype(float)  # make sure it’s numeric
+    vmin, vmax = vals.min(), vals.max()
+    if vmin == vmax:               # widen a collapsed range
+        pad = 1e-9 if vmax == 0 else abs(vmax) * 0.05
+        vmin -= pad
+        vmax += pad
+    dimensions.append(
+        dict(label=col.replace("_", " "),
+             values=vals,
+             range=[vmin, vmax])
     )
 
-    # wider container gives a horizontal scroll bar when many axes
-    st.plotly_chart(fig_pc, use_container_width=False, height=550, scrolling=True)
+fig_pc = go.Figure(
+    go.Parcoords(
+        line = dict(color=sub["sample_id"],
+                    colorscale="Turbo",
+                    showscale=False),
+        dimensions = dimensions,
+    )
+)
+st.plotly_chart(fig_pc, use_container_width=True, height=550)
 
-elif len(samples) < 2:
-    st.info("Pick at least two materials.")
-elif len(axes) < 2:
-    st.info("Pick at least two numeric properties.")
-else:
-    st.info("You can compare up to 10 materials and 10 axes at once.")
+###############################################################################
+# ❹ HEAT-MAP  (always works, handy for lots of data)
+###############################################################################
+st.subheader("🌡 Heat-map (values scaled 0-1 for visual comparison)")
+
+# min-max normalise for colour only (does NOT affect original numbers)
+hm = sub.set_index("formula_pretty")
+norm = (hm - hm.min()) / (hm.max() - hm.min() + 1e-12)
+st.plotly_chart(
+    px.imshow(
+        norm,
+        labels=dict(x="property", y="material", color="scaled value"),
+        x=hm.columns,
+        y=hm.index,
+        height=400 + 20 * len(hm),  # auto-grow with rows
+    ),
+    use_container_width=True,
+)
