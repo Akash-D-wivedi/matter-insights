@@ -52,58 +52,62 @@ if 2 <= len(choices_radar) <= 5 and len(numeric_cols) >= 3:
     )
 
 # 〈START – REPLACE THE WHOLE PARALLEL-COORDINATES BLOCK〉
-# --- parallel coordinates plot ----------------------------------------------
+# ── PARALLEL CO-ORDINATES ───────────────────────────────────────────────────
 st.subheader("Compare materials – parallel coordinates")
 
-# 1️⃣  pick the samples -------------------------------------------------------------------
+# ── pick materials ──────────────────────────────────────────────────────────
 samples = st.multiselect(
-    "Pick 2 – 10 samples (numeric properties only)",
+    "Pick 2 – 10 materials (numeric properties only)",
     df["formula_pretty"].unique(),
     key="pc-samples",
 )
 
-# 2️⃣  optionally pick which numeric columns become axes -------------------------------
-#    (makes the figure readable when you have many properties)
+# ── pick numeric axes (so labels never overlap) ─────────────────────────────
 numeric_cols = df.select_dtypes("number").columns.tolist()
-default_axes = numeric_cols[:8]                     # first 8 by default
 axes = st.multiselect(
-    "Choose 2 – 10 numeric properties to display (axes)",
+    "Choose 2 – 10 numeric properties to draw as axes",
     numeric_cols,
-    default=default_axes,
+    default=numeric_cols[:8],
     key="pc-axes",
 )
 
-# 3️⃣  draw the plot ---------------------------------------------------------------------
+# ── build the figure ────────────────────────────────────────────────────────
 if 2 <= len(samples) <= 10 and 2 <= len(axes) <= 10:
     sub = df.loc[df.formula_pretty.isin(samples), ["formula_pretty", *axes]].copy()
 
-    # ---> NO normalisation: show real units so the scale makes sense
-    #      If you do want 0-1 scaling, uncomment the loop below instead.
-    #
-    # for col in axes:
-    #     col_min, col_max = sub[col].min(), sub[col].max()
-    #     sub[col] = (sub[col] - col_min) / (col_max - col_min + 1e-9)
-
-    # Give every material a numeric colour ID (needed by Plotly)
+    # ↳ give every sample a numeric colour ID
     sub["sample_id"] = sub["formula_pretty"].astype("category").cat.codes + 1
+
+    # helper – bold min / max tick labels
+    def axis_range(col):
+        return {
+            "range"   : [sub[col].min(), sub[col].max()],
+            "label"   : col.replace("_", " "),
+            "tickvals": [sub[col].min(), sub[col].max()],
+            "ticktext": [f"<b>{sub[col].min():g}</b>", f"<b>{sub[col].max():g}</b>"],
+        }
+
+    dims = [axis_range(c) for c in axes]
 
     fig_pc = px.parallel_coordinates(
         sub,
-        dimensions=axes,
+        dimensions=dims,
         color="sample_id",
-        color_continuous_scale="Turbo",   # nice rainbow palette
-        labels={c: c.replace("_", " ") for c in axes},
+        color_continuous_scale="Turbo",
+    ).update_coloraxes(showscale=False)
+
+    # wider, scrollable container ────────────────────────────────────────────
+    st.plotly_chart(
+        fig_pc,
+        use_container_width=False,
+        theme=None,
+        height=550,
+        scrolling=True,        # ← Streamlit will give a horizontal scroll bar
     )
-    fig_pc.update_coloraxes(showscale=False)         # hide colour bar
-    fig_pc.update_layout(
-        height=500,
-        margin=dict(l=30, r=30, t=40, b=10),
-    )
-    st.plotly_chart(fig_pc, use_container_width=True)
 
 elif len(samples) < 2:
     st.info("Pick at least two materials.")
 elif len(axes) < 2:
-    st.info("Select at least two numeric properties.")
+    st.info("Pick at least two numeric properties.")
 else:
     st.info("You can compare up to 10 materials and 10 axes at once.")
