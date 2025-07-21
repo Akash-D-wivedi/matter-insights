@@ -52,57 +52,59 @@ if 2 <= len(choices_radar) <= 5 and len(numeric_cols) >= 3:
     )
 
 # 〈START – REPLACE THE WHOLE PARALLEL-COORDINATES BLOCK〉
-# ── PARALLEL CO-ORDINATES ───────────────────────────────────────────────────
+# ── PARALLEL-COORDINATES PLOT ───────────────────────────────────────────────
 st.subheader("Compare materials – parallel coordinates")
 
-# ── pick materials ──────────────────────────────────────────────────────────
+# --- pick the materials -----------------------------------------------------
 samples = st.multiselect(
     "Pick 2 – 10 materials (numeric properties only)",
     df["formula_pretty"].unique(),
-    key="pc-samples",
+    key="pc-samples"
 )
 
-# ── pick numeric axes (so labels never overlap) ─────────────────────────────
-numeric_cols = df.select_dtypes("number").columns.tolist()
+# --- pick the numeric axes --------------------------------------------------
+all_numeric = df.select_dtypes("number").columns.tolist()
 axes = st.multiselect(
     "Choose 2 – 10 numeric properties to draw as axes",
-    numeric_cols,
-    default=numeric_cols[:8],
-    key="pc-axes",
+    all_numeric,
+    default=all_numeric[:6],
+    key="pc-axes"
 )
 
-# ── build the figure ────────────────────────────────────────────────────────
+# --- build the plot ---------------------------------------------------------
 if 2 <= len(samples) <= 10 and 2 <= len(axes) <= 10:
+
+    # subset to the chosen materials & axes
     sub = df.loc[df.formula_pretty.isin(samples), ["formula_pretty", *axes]].copy()
 
-    # ↳ give every sample a numeric colour ID
+    # give every sample a numeric ID for the colour scale
     sub["sample_id"] = sub["formula_pretty"].astype("category").cat.codes + 1
 
-    # helper – bold min / max tick labels
-    def axis_range(col):
-        return {
-            "range"   : [sub[col].min(), sub[col].max()],
-            "label"   : col.replace("_", " "),
-            "tickvals": [sub[col].min(), sub[col].max()],
-            "ticktext": [f"<b>{sub[col].min():g}</b>", f"<b>{sub[col].max():g}</b>"],
-        }
-
-    dims = [axis_range(c) for c in axes]
+    # add original ranges (no 0-1 normalising)
+    dims = [
+        dict(
+            label     = a.replace("_", " "),
+            values    = sub[a],
+            range     = [sub[a].min(), sub[a].max()],
+            tickfont  = dict(size=11),
+        )
+        for a in axes
+    ]
 
     fig_pc = px.parallel_coordinates(
         sub,
         dimensions=dims,
         color="sample_id",
         color_continuous_scale="Turbo",
+        labels={"sample_id": "sample"},
     ).update_coloraxes(showscale=False)
 
-    # wider, scrollable container ────────────────────────────────────────────
+    # wider container gives a horizontal scroll bar when many axes
     st.plotly_chart(
         fig_pc,
         use_container_width=False,
-        theme=None,
         height=550,
-        scrolling=True,        # ← Streamlit will give a horizontal scroll bar
+        scrolling=True,
     )
 
 elif len(samples) < 2:
