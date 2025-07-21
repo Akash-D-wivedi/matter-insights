@@ -55,43 +55,55 @@ if 2 <= len(choices_radar) <= 5 and len(numeric_cols) >= 3:
 # --- parallel coordinates plot ----------------------------------------------
 st.subheader("Compare materials – parallel coordinates")
 
-choices_pc = st.multiselect(
+# 1️⃣  pick the samples -------------------------------------------------------------------
+samples = st.multiselect(
     "Pick 2 – 10 samples (numeric properties only)",
     df["formula_pretty"].unique(),
-    key="pc",
+    key="pc-samples",
 )
 
-# make sure we have enough samples and at least 2 numeric axes
-if 2 <= len(choices_pc) <= 10 and len(numeric_cols) >= 2:
-    # keep only the chosen rows + numeric columns
-    norm = df.loc[
-        df.formula_pretty.isin(choices_pc), ["formula_pretty", *numeric_cols]
-    ].copy()
+# 2️⃣  optionally pick which numeric columns become axes -------------------------------
+#    (makes the figure readable when you have many properties)
+numeric_cols = df.select_dtypes("number").columns.tolist()
+default_axes = numeric_cols[:8]                     # first 8 by default
+axes = st.multiselect(
+    "Choose 2 – 10 numeric properties to display (axes)",
+    numeric_cols,
+    default=default_axes,
+    key="pc-axes",
+)
 
-    # 1️ map every formula_pretty to a numeric ID for colouring
-    norm["sample_id"] = (
-        norm["formula_pretty"].astype("category").cat.codes + 1
-    )  # start at 1
+# 3️⃣  draw the plot ---------------------------------------------------------------------
+if 2 <= len(samples) <= 10 and 2 <= len(axes) <= 10:
+    sub = df.loc[df.formula_pretty.isin(samples), ["formula_pretty", *axes]].copy()
 
-    # 2️ normalise numeric columns to 0‒1 so axes have the same scale
-    for col in numeric_cols:
-        cmin, cmax = norm[col].min(), norm[col].max()
-        norm[col] = (norm[col] - cmin) / (cmax - cmin + 1e-9)
+    # ---> NO normalisation: show real units so the scale makes sense
+    #      If you do want 0-1 scaling, uncomment the loop below instead.
+    #
+    # for col in axes:
+    #     col_min, col_max = sub[col].min(), sub[col].max()
+    #     sub[col] = (sub[col] - col_min) / (col_max - col_min + 1e-9)
 
-    # 3️ build the figure – colour uses the numeric sample_id
+    # Give every material a numeric colour ID (needed by Plotly)
+    sub["sample_id"] = sub["formula_pretty"].astype("category").cat.codes + 1
+
     fig_pc = px.parallel_coordinates(
-        norm,
-        dimensions=numeric_cols,
+        sub,
+        dimensions=axes,
         color="sample_id",
-        color_continuous_scale="Turbo",
-        labels={c: c.replace("_", " ") for c in numeric_cols},
+        color_continuous_scale="Turbo",   # nice rainbow palette
+        labels={c: c.replace("_", " ") for c in axes},
     )
-
-    # hide colour bar (legend already comes from multiselect chips)
-    fig_pc.update_coloraxes(showscale=False)
-
+    fig_pc.update_coloraxes(showscale=False)         # hide colour bar
+    fig_pc.update_layout(
+        height=500,
+        margin=dict(l=30, r=30, t=40, b=10),
+    )
     st.plotly_chart(fig_pc, use_container_width=True)
 
-elif len(numeric_cols) < 2:
-    st.info("Not enough numeric columns to draw a parallel-coordinates plot.")
-# 〈END〉
+elif len(samples) < 2:
+    st.info("Pick at least two materials.")
+elif len(axes) < 2:
+    st.info("Select at least two numeric properties.")
+else:
+    st.info("You can compare up to 10 materials and 10 axes at once.")
