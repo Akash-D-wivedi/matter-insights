@@ -52,60 +52,59 @@ if 2 <= len(choices_radar) <= 5 and len(numeric_cols) >= 3:
     )
 
 # 〈START – REPLACE THE WHOLE PARALLEL-COORDINATES BLOCK〉
-# ── PARALLEL-COORDINATES PLOT ───────────────────────────────────────────────
+
+# --- PARALLEL-COORDINATES PLOT --------------------------------------------
 st.subheader("Compare materials – parallel coordinates")
 
-# --- pick the materials -----------------------------------------------------
+# ── pick samples ───────────────────────────────────────────────────────────
 samples = st.multiselect(
     "Pick 2 – 10 materials (numeric properties only)",
     df["formula_pretty"].unique(),
-    key="pc-samples"
+    key="pc-samples",
 )
 
-# --- pick the numeric axes --------------------------------------------------
+# ── pick numeric axes ──────────────────────────────────────────────────────
 all_numeric = df.select_dtypes("number").columns.tolist()
 axes = st.multiselect(
     "Choose 2 – 10 numeric properties to draw as axes",
     all_numeric,
-    default=all_numeric[:6],
-    key="pc-axes"
+    default=all_numeric[:6],          # first few as a sane default
+    key="pc-axes",
 )
 
-# --- build the plot ---------------------------------------------------------
+# ── build the plot ─────────────────────────────────────────────────────────
 if 2 <= len(samples) <= 10 and 2 <= len(axes) <= 10:
-
-    # subset to the chosen materials & axes
     sub = df.loc[df.formula_pretty.isin(samples), ["formula_pretty", *axes]].copy()
 
-    # give every sample a numeric ID for the colour scale
+    # numeric line-colour (one integer per sample) → works for Parcoords
     sub["sample_id"] = sub["formula_pretty"].astype("category").cat.codes + 1
 
-    # add original ranges (no 0-1 normalising)
-    dims = [
-        dict(
-            label     = a.replace("_", " "),
-            values    = sub[a],
-            range     = [sub[a].min(), sub[a].max()],
-            tickfont  = dict(size=11),
-        )
-        for a in axes
-    ]
+    import plotly.graph_objects as go
 
-    fig_pc = px.parallel_coordinates(
-        sub,
-        dimensions=dims,
-        color="sample_id",
-        color_continuous_scale="Turbo",
-        labels={"sample_id": "sample"},
-    ).update_coloraxes(showscale=False)
+    dimensions = []
+    for col in axes:
+        dimensions.append(
+            dict(
+                label   = col.replace("_", " "),
+                values  = sub[col],
+                range   = [sub[col].min(), sub[col].max()],  # keep real numbers
+                tickfont= dict(size=11),
+            )
+        )
+
+    fig_pc = go.Figure(
+        data=go.Parcoords(
+            line=dict(
+                color=sub["sample_id"],
+                colorscale="Turbo",
+                showscale=False,
+            ),
+            dimensions=dimensions,
+        )
+    )
 
     # wider container gives a horizontal scroll bar when many axes
-    st.plotly_chart(
-        fig_pc,
-        use_container_width=False,
-        height=550,
-        scrolling=True,
-    )
+    st.plotly_chart(fig_pc, use_container_width=False, height=550, scrolling=True)
 
 elif len(samples) < 2:
     st.info("Pick at least two materials.")
